@@ -17,4 +17,7 @@ uv run uvicorn fbuild_backend.main:app --reload
 
 Deployment is expected to run through Docker, with `uv` managing Python package
 resolution inside the backend image.
+
+For real Pgyer uploads, provide `PGYER_API_KEY` to the backend container
+environment. The repository does not hardcode the key.
 ```
