@@ -31,6 +31,7 @@ class _DashboardPageState extends State<DashboardPage> {
   final Set<int> _syncingProjectIds = <int>{};
   final Set<int> _loadingBranchProjectIds = <int>{};
   final Map<int, String> _branchErrors = <int, String>{};
+  final Set<String> _submittingBuildKeys = <String>{};
 
   @override
   void initState() {
@@ -203,6 +204,53 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _submitBuild(
+    Project project,
+    ProjectBranch branch,
+    String platform,
+  ) async {
+    final actionKey = '${project.id}:${branch.name}:$platform';
+
+    setState(() {
+      _submittingBuildKeys.add(actionKey);
+    });
+
+    try {
+      final job = await _apiClient.createBuildJob(
+        projectId: project.id,
+        branch: branch.name,
+        platform: platform,
+      );
+      await _loadDashboard(showLoading: false);
+
+      if (!mounted) {
+        return;
+      }
+
+      final platformLabel = platform == 'ios' ? 'iOS' : 'Android';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$platformLabel 构建任务已创建，队列任务 #${job.id}')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF9F2A2A),
+          content: Text('创建构建任务失败：$error'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submittingBuildKeys.remove(actionKey);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -261,6 +309,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                     branchErrors: _branchErrors,
                                     onSyncProject: _syncAndLoadBranches,
                                     onLoadBranches: _loadBranches,
+                                    submittingBuildKeys: _submittingBuildKeys,
+                                    onSubmitBuild: _submitBuild,
                                   ),
                                 ),
                               ],
@@ -288,6 +338,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                 branchErrors: _branchErrors,
                                 onSyncProject: _syncAndLoadBranches,
                                 onLoadBranches: _loadBranches,
+                                submittingBuildKeys: _submittingBuildKeys,
+                                onSubmitBuild: _submitBuild,
                               ),
                             ],
                           );
@@ -563,6 +615,8 @@ class _DashboardContent extends StatelessWidget {
     required this.branchErrors,
     required this.onSyncProject,
     required this.onLoadBranches,
+    required this.submittingBuildKeys,
+    required this.onSubmitBuild,
   });
 
   final List<Project> projects;
@@ -573,6 +627,13 @@ class _DashboardContent extends StatelessWidget {
   final Map<int, String> branchErrors;
   final Future<void> Function(Project project) onSyncProject;
   final Future<void> Function(Project project) onLoadBranches;
+  final Set<String> submittingBuildKeys;
+  final Future<void> Function(
+    Project project,
+    ProjectBranch branch,
+    String platform,
+  )
+  onSubmitBuild;
 
   @override
   Widget build(BuildContext context) {
@@ -604,6 +665,9 @@ class _DashboardContent extends StatelessWidget {
                             ),
                             onSyncProject: () => onSyncProject(project),
                             onLoadBranches: () => onLoadBranches(project),
+                            submittingBuildKeys: submittingBuildKeys,
+                            onSubmitBuild: (branch, platform) =>
+                                onSubmitBuild(project, branch, platform),
                           ),
                         ),
                       )
@@ -702,6 +766,8 @@ class _ProjectCard extends StatelessWidget {
     required this.loadingBranches,
     required this.onSyncProject,
     required this.onLoadBranches,
+    required this.submittingBuildKeys,
+    required this.onSubmitBuild,
   });
 
   final Project project;
@@ -711,6 +777,9 @@ class _ProjectCard extends StatelessWidget {
   final bool loadingBranches;
   final VoidCallback onSyncProject;
   final VoidCallback onLoadBranches;
+  final Set<String> submittingBuildKeys;
+  final Future<void> Function(ProjectBranch branch, String platform)
+  onSubmitBuild;
 
   @override
   Widget build(BuildContext context) {
@@ -815,7 +884,12 @@ class _ProjectCard extends StatelessWidget {
             ...branches.map(
               (branch) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _BranchRow(branch: branch),
+                child: _BranchRow(
+                  projectId: project.id,
+                  branch: branch,
+                  submittingBuildKeys: submittingBuildKeys,
+                  onSubmitBuild: onSubmitBuild,
+                ),
               ),
             ),
           ],
@@ -826,13 +900,26 @@ class _ProjectCard extends StatelessWidget {
 }
 
 class _BranchRow extends StatelessWidget {
-  const _BranchRow({required this.branch});
+  const _BranchRow({
+    required this.projectId,
+    required this.branch,
+    required this.submittingBuildKeys,
+    required this.onSubmitBuild,
+  });
 
+  final int projectId;
   final ProjectBranch branch;
+  final Set<String> submittingBuildKeys;
+  final Future<void> Function(ProjectBranch branch, String platform)
+  onSubmitBuild;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final androidActionKey = '$projectId:${branch.name}:android';
+    final iosActionKey = '$projectId:${branch.name}:ios';
+    final androidSubmitting = submittingBuildKeys.contains(androidActionKey);
+    final iosSubmitting = submittingBuildKeys.contains(iosActionKey);
 
     return Container(
       width: double.infinity,
@@ -877,6 +964,39 @@ class _BranchRow extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(
               color: const Color(0xFF6B625B),
             ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: androidSubmitting
+                    ? null
+                    : () => onSubmitBuild(branch, 'android'),
+                icon: androidSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.android_rounded),
+                label: Text(androidSubmitting ? '提交中...' : '发起 Android'),
+              ),
+              OutlinedButton.icon(
+                onPressed: iosSubmitting
+                    ? null
+                    : () => onSubmitBuild(branch, 'ios'),
+                icon: iosSubmitting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.phone_iphone_rounded),
+                label: Text(iosSubmitting ? '提交中...' : '发起 iOS'),
+              ),
+            ],
           ),
         ],
       ),
