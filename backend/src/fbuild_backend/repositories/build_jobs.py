@@ -8,6 +8,7 @@ from fbuild_backend.repositories.build_logs import append_build_log
 BuildPlatform = Literal["android", "ios"]
 BuildJobStatus = Literal["queued", "preparing", "running", "uploading", "success", "failed", "cancelled"]
 ACTIVE_JOB_STATUSES: tuple[BuildJobStatus, ...] = ("preparing", "running", "uploading")
+TERMINAL_JOB_STATUSES: tuple[BuildJobStatus, ...] = ("success", "failed", "cancelled")
 
 
 @dataclass
@@ -127,3 +128,94 @@ def list_queued_build_jobs() -> list[BuildJobRecord]:
         ).fetchall()
 
     return [_to_record(row, queue_position=index) for index, row in enumerate(rows, start=1)]
+
+
+def claim_next_queued_build_job() -> BuildJobRecord | None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    with db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM build_jobs
+            WHERE status = 'queued'
+            ORDER BY requested_at ASC, id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return None
+
+        connection.execute(
+            """
+            UPDATE build_jobs
+            SET status = 'preparing', started_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (now, row["id"]),
+        )
+        claimed_row = connection.execute(
+            """
+            SELECT id, project_id, branch, platform, status, requested_at, started_at, finished_at,
+                   commit_sha, artifact_path, pgyer_url, error_message
+            FROM build_jobs
+            WHERE id = ?
+            """,
+            (row["id"],),
+        ).fetchone()
+
+    if claimed_row is None:
+        return None
+
+    return _to_record(claimed_row)
+
+
+def update_build_job(
+    job_id: int,
+    *,
+    status: BuildJobStatus | None = None,
+    commit_sha: str | None = None,
+    artifact_path: str | None = None,
+    pgyer_url: str | None = None,
+    error_message: str | None = None,
+) -> BuildJobRecord:
+    current = get_build_job(job_id)
+    if current is None:
+        raise RuntimeError(f"Build job {job_id} does not exist.")
+
+    new_status = status or current.status
+    finished_at = current.finished_at
+    if status in TERMINAL_JOB_STATUSES:
+        finished_at = datetime.now(timezone.utc).isoformat()
+
+    with db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE build_jobs
+            SET status = ?, commit_sha = ?, artifact_path = ?, pgyer_url = ?, error_message = ?, finished_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_status,
+                commit_sha if commit_sha is not None else current.commit_sha,
+                artifact_path if artifact_path is not None else current.artifact_path,
+                pgyer_url if pgyer_url is not None else current.pgyer_url,
+                error_message if error_message is not None else current.error_message,
+                finished_at,
+                job_id,
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT id, project_id, branch, platform, status, requested_at, started_at, finished_at,
+                   commit_sha, artifact_path, pgyer_url, error_message
+            FROM build_jobs
+            WHERE id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+
+    if row is None:
+        raise RuntimeError(f"Failed to reload build job {job_id}.")
+
+    return _to_record(row)
