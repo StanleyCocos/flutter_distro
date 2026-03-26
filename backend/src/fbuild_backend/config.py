@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 class Settings(BaseSettings):
     app_name: str = "F-Build Backend"
     app_env: str = Field(default="development", alias="APP_ENV")
+    worker_poll_seconds: float = Field(default=2.0, alias="WORKER_POLL_SECONDS")
     data_dir: Path = Field(default=REPO_ROOT / "data", alias="DATA_DIR")
     logs_dir: Path = Field(default=REPO_ROOT / "logs", alias="LOGS_DIR")
     artifacts_dir: Path = Field(default=REPO_ROOT / "artifacts", alias="ARTIFACTS_DIR")
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         populate_by_name=True,
     )
+
 
 @lru_cache
 def get_settings() -> Settings:
