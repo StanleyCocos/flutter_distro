@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fbuild_backend.db import db_connection
+from fbuild_backend.repositories.build_logs import append_build_log
 
 BuildPlatform = Literal["android", "ios"]
 BuildJobStatus = Literal["queued", "preparing", "running", "uploading", "success", "failed", "cancelled"]
@@ -67,7 +68,13 @@ def create_build_job(project_id: int, branch: str, platform: BuildPlatform) -> B
     if row is None:
         raise RuntimeError("Failed to load the created build job record.")
 
-    return _to_record(row)
+    job = _to_record(row)
+    append_build_log(
+        job.id,
+        "system",
+        f"Build job queued for project {project_id} on branch {branch} ({platform}).",
+    )
+    return job
 
 
 def get_build_job(job_id: int) -> BuildJobRecord | None:
@@ -120,4 +127,3 @@ def list_queued_build_jobs() -> list[BuildJobRecord]:
         ).fetchall()
 
     return [_to_record(row, queue_position=index) for index, row in enumerate(rows, start=1)]
-

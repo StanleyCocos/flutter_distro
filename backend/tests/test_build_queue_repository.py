@@ -5,6 +5,7 @@ from pathlib import Path
 from fbuild_backend import db
 from fbuild_backend.config import settings
 from fbuild_backend.repositories.build_jobs import create_build_job, list_queued_build_jobs
+from fbuild_backend.repositories.build_logs import list_build_logs
 from fbuild_backend.repositories.projects import create_project
 
 
@@ -41,6 +42,10 @@ class BuildQueueRepositoryTest(unittest.TestCase):
 
         self.assertEqual([job.id for job in queued], [first.id, second.id])
         self.assertEqual([job.queue_position for job in queued], [1, 2])
+
+        first_logs = list_build_logs(first.id)
+        self.assertEqual(first_logs[0].seq, 1)
+        self.assertIn("Build job queued", first_logs[0].message)
 
 
 if __name__ == "__main__":

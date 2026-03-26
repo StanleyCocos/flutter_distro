@@ -54,6 +54,20 @@ class BuildApiTest(unittest.TestCase):
             self.assertEqual(len(queue_response.json()), 1)
             self.assertEqual(queue_response.json()[0]["queue_position"], 1)
 
+            logs_response = client.get(
+                f"/api/builds/{build_response.json()['id']}/logs"
+            )
+            self.assertEqual(logs_response.status_code, 200)
+            self.assertEqual(len(logs_response.json()), 1)
+            self.assertEqual(logs_response.json()[0]["seq"], 1)
+            self.assertEqual(logs_response.json()[0]["stream"], "system")
+
+            empty_incremental_response = client.get(
+                f"/api/builds/{build_response.json()['id']}/logs?after_seq=1"
+            )
+            self.assertEqual(empty_incremental_response.status_code, 200)
+            self.assertEqual(empty_incremental_response.json(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

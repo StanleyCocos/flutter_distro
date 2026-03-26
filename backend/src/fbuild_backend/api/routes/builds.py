@@ -6,7 +6,9 @@ from fbuild_backend.repositories.build_jobs import (
     get_current_build_job,
     list_queued_build_jobs,
 )
+from fbuild_backend.repositories.build_logs import list_build_logs
 from fbuild_backend.repositories.projects import get_project
+from fbuild_backend.schemas.build_logs import BuildLogResponse
 from fbuild_backend.schemas.build_jobs import BuildJobResponse, CreateBuildJobRequest
 
 router = APIRouter(prefix="/builds", tags=["builds"])
@@ -52,3 +54,17 @@ def get_build(job_id: int) -> BuildJobResponse:
         )
     return BuildJobResponse.model_validate(job)
 
+
+@router.get("/{job_id}/logs", response_model=list[BuildLogResponse])
+def get_build_logs(job_id: int, after_seq: int = 0) -> list[BuildLogResponse]:
+    job = get_build_job(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Build job {job_id} does not exist",
+        )
+
+    return [
+        BuildLogResponse.model_validate(log)
+        for log in list_build_logs(job_id=job_id, after_seq=after_seq)
+    ]

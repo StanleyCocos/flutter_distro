@@ -65,6 +65,25 @@ def init_db() -> None:
             ON build_jobs(status, requested_at, id)
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS build_job_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                seq INTEGER NOT NULL,
+                stream TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(job_id) REFERENCES build_jobs(id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_build_job_logs_job_seq
+            ON build_job_logs(job_id, seq)
+            """
+        )
         connection.commit()
 
 
