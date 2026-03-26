@@ -1,3 +1,8 @@
+from collections.abc import Callable
+
+from fbuild_backend.repositories.projects import get_project, ProjectRecord
+from fbuild_backend.services.build_executor import BuildExecutor
+from fbuild_backend.services.git_projects import sync_project_workspace
 from fbuild_backend.repositories.build_jobs import (
     BuildJobRecord,
     claim_next_queued_build_job,
@@ -9,19 +14,49 @@ from fbuild_backend.repositories.build_logs import append_build_log
 class BuildWorker:
     """Single-job processor used by the future background queue loop."""
 
+    def __init__(
+        self,
+        *,
+        build_executor: BuildExecutor | None = None,
+        project_syncer: Callable[[ProjectRecord], ProjectRecord] | None = None,
+    ) -> None:
+        self._build_executor = build_executor or BuildExecutor()
+        self._project_syncer = project_syncer or sync_project_workspace
+
     def process_next_job(self) -> BuildJobRecord | None:
         job = claim_next_queued_build_job()
         if job is None:
             return None
 
         append_build_log(job.id, "system", "Worker claimed queued job and started preparation.")
-        job = update_build_job(job.id, status="running")
-        append_build_log(job.id, "system", "Mock executor entered running state.")
+        try:
+            project = self._load_project(job.project_id)
+            append_build_log(job.id, "system", f"Syncing workspace for project {project.slug}.")
+            synced_project = self._project_syncer(project)
 
-        # This foundation keeps the execution mock-only for now.
-        job = update_build_job(job.id, status="uploading")
-        append_build_log(job.id, "system", "Mock executor entered uploading state.")
+            job = update_build_job(job.id, status="running")
+            append_build_log(job.id, "system", "Workspace synced. Starting build commands.")
+            result = self._build_executor.execute(job, synced_project)
 
-        job = update_build_job(job.id, status="success")
-        append_build_log(job.id, "system", "Mock executor completed the build successfully.")
-        return job
+            job = update_build_job(
+                job.id,
+                status="uploading",
+                commit_sha=result.commit_sha,
+                artifact_path=result.artifact_path,
+            )
+            append_build_log(job.id, "system", "Build finished. Upload stage is ready.")
+
+            job = update_build_job(job.id, status="success")
+            append_build_log(job.id, "system", "Build worker completed the job successfully.")
+            return job
+        except Exception as exc:
+            append_build_log(job.id, "stderr", str(exc))
+            failed_job = update_build_job(job.id, status="failed", error_message=str(exc))
+            append_build_log(job.id, "system", "Build worker marked the job as failed.")
+            return failed_job
+
+    def _load_project(self, project_id: int) -> ProjectRecord:
+        project = get_project(project_id)
+        if project is None:
+            raise RuntimeError(f"Project {project_id} does not exist for this build job.")
+        return project
