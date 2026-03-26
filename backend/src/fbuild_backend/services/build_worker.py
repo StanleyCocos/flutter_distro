@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 from fbuild_backend.repositories.projects import get_project, ProjectRecord
 from fbuild_backend.services.build_executor import BuildExecutor
+from fbuild_backend.services.pgyer_uploader import MockPgyerUploader
 from fbuild_backend.services.git_projects import sync_project_workspace
 from fbuild_backend.repositories.build_jobs import (
     BuildJobRecord,
@@ -19,9 +20,11 @@ class BuildWorker:
         *,
         build_executor: BuildExecutor | None = None,
         project_syncer: Callable[[ProjectRecord], ProjectRecord] | None = None,
+        uploader: MockPgyerUploader | None = None,
     ) -> None:
         self._build_executor = build_executor or BuildExecutor()
         self._project_syncer = project_syncer or sync_project_workspace
+        self._uploader = uploader or MockPgyerUploader()
 
     def process_next_job(self) -> BuildJobRecord | None:
         job = claim_next_queued_build_job()
@@ -44,9 +47,14 @@ class BuildWorker:
                 commit_sha=result.commit_sha,
                 artifact_path=result.artifact_path,
             )
-            append_build_log(job.id, "system", "Build finished. Upload stage is ready.")
+            append_build_log(job.id, "system", "Build finished. Starting mock Pgyer upload.")
+            upload_result = self._uploader.upload(
+                job=job,
+                project=synced_project,
+                artifact_path=result.artifact_path,
+            )
 
-            job = update_build_job(job.id, status="success")
+            job = update_build_job(job.id, status="success", pgyer_url=upload_result.download_url)
             append_build_log(job.id, "system", "Build worker completed the job successfully.")
             return job
         except Exception as exc:
