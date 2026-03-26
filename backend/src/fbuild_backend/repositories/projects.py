@@ -50,6 +50,22 @@ def list_projects() -> list[ProjectRecord]:
     return [_to_record(row) for row in rows]
 
 
+def get_project(project_id: int) -> ProjectRecord | None:
+    with db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, name, repo_url, slug, workspace_path, is_active, last_sync_at, created_at, updated_at
+            FROM projects
+            WHERE id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return _to_record(row)
+
+
 def _next_available_slug(base_slug: str) -> str:
     with db_connection() as connection:
         rows = connection.execute(
