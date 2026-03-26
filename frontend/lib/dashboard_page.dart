@@ -26,6 +26,11 @@ class _DashboardPageState extends State<DashboardPage> {
   List<BuildJob> _queuedJobs = const <BuildJob>[];
   BuildJob? _currentBuild;
   DateTime? _lastUpdatedAt;
+  final Map<int, List<ProjectBranch>> _projectBranches =
+      <int, List<ProjectBranch>>{};
+  final Set<int> _syncingProjectIds = <int>{};
+  final Set<int> _loadingBranchProjectIds = <int>{};
+  final Map<int, String> _branchErrors = <int, String>{};
 
   @override
   void initState() {
@@ -128,6 +133,76 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _syncAndLoadBranches(Project project) async {
+    setState(() {
+      _syncingProjectIds.add(project.id);
+      _branchErrors.remove(project.id);
+    });
+
+    try {
+      final syncedProject = await _apiClient.syncProject(project.id);
+      final branches = await _apiClient.listProjectBranches(project.id);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _projects = _projects
+            .map((item) => item.id == syncedProject.id ? syncedProject : item)
+            .toList(growable: false);
+        _projectBranches[project.id] = branches;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _branchErrors[project.id] = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _syncingProjectIds.remove(project.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _loadBranches(Project project) async {
+    setState(() {
+      _loadingBranchProjectIds.add(project.id);
+      _branchErrors.remove(project.id);
+    });
+
+    try {
+      final branches = await _apiClient.listProjectBranches(project.id);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _projectBranches[project.id] = branches;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _branchErrors[project.id] = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingBranchProjectIds.remove(project.id);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -179,6 +254,13 @@ class _DashboardPageState extends State<DashboardPage> {
                                   child: _DashboardContent(
                                     projects: _projects,
                                     queuedJobs: _queuedJobs,
+                                    projectBranches: _projectBranches,
+                                    syncingProjectIds: _syncingProjectIds,
+                                    loadingBranchProjectIds:
+                                        _loadingBranchProjectIds,
+                                    branchErrors: _branchErrors,
+                                    onSyncProject: _syncAndLoadBranches,
+                                    onLoadBranches: _loadBranches,
                                   ),
                                 ),
                               ],
@@ -199,6 +281,13 @@ class _DashboardPageState extends State<DashboardPage> {
                               _DashboardContent(
                                 projects: _projects,
                                 queuedJobs: _queuedJobs,
+                                projectBranches: _projectBranches,
+                                syncingProjectIds: _syncingProjectIds,
+                                loadingBranchProjectIds:
+                                    _loadingBranchProjectIds,
+                                branchErrors: _branchErrors,
+                                onSyncProject: _syncAndLoadBranches,
+                                onLoadBranches: _loadBranches,
                               ),
                             ],
                           );
@@ -465,10 +554,25 @@ class _DashboardRail extends StatelessWidget {
 }
 
 class _DashboardContent extends StatelessWidget {
-  const _DashboardContent({required this.projects, required this.queuedJobs});
+  const _DashboardContent({
+    required this.projects,
+    required this.queuedJobs,
+    required this.projectBranches,
+    required this.syncingProjectIds,
+    required this.loadingBranchProjectIds,
+    required this.branchErrors,
+    required this.onSyncProject,
+    required this.onLoadBranches,
+  });
 
   final List<Project> projects;
   final List<BuildJob> queuedJobs;
+  final Map<int, List<ProjectBranch>> projectBranches;
+  final Set<int> syncingProjectIds;
+  final Set<int> loadingBranchProjectIds;
+  final Map<int, String> branchErrors;
+  final Future<void> Function(Project project) onSyncProject;
+  final Future<void> Function(Project project) onLoadBranches;
 
   @override
   Widget build(BuildContext context) {
@@ -488,7 +592,19 @@ class _DashboardContent extends StatelessWidget {
                       .map(
                         (project) => Padding(
                           padding: const EdgeInsets.only(bottom: 14),
-                          child: _ProjectCard(project: project),
+                          child: _ProjectCard(
+                            project: project,
+                            branches:
+                                projectBranches[project.id] ??
+                                const <ProjectBranch>[],
+                            branchError: branchErrors[project.id],
+                            syncing: syncingProjectIds.contains(project.id),
+                            loadingBranches: loadingBranchProjectIds.contains(
+                              project.id,
+                            ),
+                            onSyncProject: () => onSyncProject(project),
+                            onLoadBranches: () => onLoadBranches(project),
+                          ),
                         ),
                       )
                       .toList(growable: false),
@@ -578,9 +694,23 @@ class _PanelCard extends StatelessWidget {
 }
 
 class _ProjectCard extends StatelessWidget {
-  const _ProjectCard({required this.project});
+  const _ProjectCard({
+    required this.project,
+    required this.branches,
+    required this.branchError,
+    required this.syncing,
+    required this.loadingBranches,
+    required this.onSyncProject,
+    required this.onLoadBranches,
+  });
 
   final Project project;
+  final List<ProjectBranch> branches;
+  final String? branchError;
+  final bool syncing;
+  final bool loadingBranches;
+  final VoidCallback onSyncProject;
+  final VoidCallback onLoadBranches;
 
   @override
   Widget build(BuildContext context) {
@@ -632,10 +762,121 @@ class _ProjectCard extends StatelessWidget {
                 label: project.workspacePath,
               ),
               _MetaChip(
+                icon: Icons.account_tree_rounded,
+                label: '默认分支 ${project.defaultBranch ?? '未识别'}',
+              ),
+              _MetaChip(
                 icon: Icons.sync_alt_rounded,
                 label: project.lastSyncAt == null ? '待同步分支' : '已同步分支',
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: syncing ? null : onSyncProject,
+                icon: syncing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_rounded),
+                label: Text(syncing ? '同步中...' : '同步项目'),
+              ),
+              OutlinedButton.icon(
+                onPressed: loadingBranches ? null : onLoadBranches,
+                icon: loadingBranches
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.alt_route_rounded),
+                label: Text(loadingBranches ? '读取中...' : '查看分支'),
+              ),
+            ],
+          ),
+          if (branchError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              branchError!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF9F2A2A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (branches.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            ...branches.map(
+              (branch) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _BranchRow(branch: branch),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BranchRow extends StatelessWidget {
+  const _BranchRow({required this.branch});
+
+  final ProjectBranch branch;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2D9CC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  branch.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                branch.commitSha,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF4B5D67),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            branch.commitSubject,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFF231F20),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            branch.commitDate,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF6B625B),
+            ),
           ),
         ],
       ),
