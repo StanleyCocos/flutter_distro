@@ -2,7 +2,11 @@ from collections.abc import Callable
 
 from fbuild_backend.repositories.projects import get_project, ProjectRecord
 from fbuild_backend.services.build_executor import BuildExecutor
-from fbuild_backend.services.pgyer_uploader import MockPgyerUploader
+from fbuild_backend.services.pgyer_uploader import (
+    MockPgyerUploader,
+    PgyerUploader,
+    create_default_uploader,
+)
 from fbuild_backend.services.git_projects import sync_project_workspace
 from fbuild_backend.repositories.build_jobs import (
     BuildJobRecord,
@@ -20,11 +24,11 @@ class BuildWorker:
         *,
         build_executor: BuildExecutor | None = None,
         project_syncer: Callable[[ProjectRecord], ProjectRecord] | None = None,
-        uploader: MockPgyerUploader | None = None,
+        uploader: PgyerUploader | MockPgyerUploader | None = None,
     ) -> None:
         self._build_executor = build_executor or BuildExecutor()
         self._project_syncer = project_syncer or sync_project_workspace
-        self._uploader = uploader or MockPgyerUploader()
+        self._uploader = uploader or create_default_uploader()
 
     def process_next_job(self) -> BuildJobRecord | None:
         job = claim_next_queued_build_job()

@@ -10,6 +10,8 @@ services:
   backend:
     build:
       context: ./backend
+    environment:
+      PGYER_API_KEY: ${PGYER_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:
