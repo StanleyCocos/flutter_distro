@@ -28,6 +28,24 @@ class FakeBuildExecutor:
         )
 
 
+class FakeUploader:
+    def __init__(self, *, fail_with: str | None = None) -> None:
+        self.fail_with = fail_with
+        self.calls: list[tuple[int, int, str | None]] = []
+
+    def upload(self, *, job, project, artifact_path):
+        if self.fail_with is not None:
+            raise RuntimeError(self.fail_with)
+
+        self.calls.append((job.id, project.id, artifact_path))
+
+        class _Result:
+            def __init__(self, download_url: str) -> None:
+                self.download_url = download_url
+
+        return _Result(download_url=f"https://mock.pgyer.local/apps/{project.slug}/{job.id}")
+
+
 class BuildWorkerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -59,10 +77,12 @@ class BuildWorkerTest(unittest.TestCase):
         self.assertIsNotNone(stored_project)
 
         fake_executor = FakeBuildExecutor()
+        fake_uploader = FakeUploader()
 
         worker = BuildWorker(
             build_executor=fake_executor,
             project_syncer=lambda input_project: input_project,
+            uploader=fake_uploader,
         )
         processed_job = worker.process_next_job()
 
@@ -72,6 +92,11 @@ class BuildWorkerTest(unittest.TestCase):
         self.assertEqual(processed_job.commit_sha, "abc123def456")
         self.assertTrue(processed_job.artifact_path.endswith("app-release.apk"))
         self.assertEqual(fake_executor.calls, [(queued_job.id, project.id)])
+        self.assertEqual(
+            fake_uploader.calls,
+            [(queued_job.id, project.id, processed_job.artifact_path)],
+        )
+        self.assertTrue(processed_job.pgyer_url.endswith(f"/{queued_job.id}"))
 
         stored_job = get_build_job(queued_job.id)
         self.assertIsNotNone(stored_job)
@@ -79,6 +104,7 @@ class BuildWorkerTest(unittest.TestCase):
         self.assertIsNotNone(stored_job.started_at)
         self.assertIsNotNone(stored_job.finished_at)
         self.assertEqual(stored_job.commit_sha, "abc123def456")
+        self.assertEqual(stored_job.pgyer_url, processed_job.pgyer_url)
 
         log_messages = [log.message for log in list_build_logs(queued_job.id)]
         self.assertGreaterEqual(len(log_messages), 5)
@@ -96,6 +122,7 @@ class BuildWorkerTest(unittest.TestCase):
         worker = BuildWorker(
             build_executor=FakeBuildExecutor(fail_with="simulated build failure"),
             project_syncer=lambda input_project: input_project,
+            uploader=FakeUploader(),
         )
         processed_job = worker.process_next_job()
 
@@ -106,6 +133,21 @@ class BuildWorkerTest(unittest.TestCase):
         log_messages = [log.message for log in list_build_logs(queued_job.id)]
         self.assertIn("simulated build failure", log_messages[-2])
         self.assertIn("marked the job as failed", log_messages[-1])
+
+    def test_process_next_job_marks_failure_when_upload_raises(self) -> None:
+        project = create_project("https://github.com/acme/mobile-app.git")
+        create_build_job(project.id, "main", "android")
+
+        worker = BuildWorker(
+            build_executor=FakeBuildExecutor(),
+            project_syncer=lambda input_project: input_project,
+            uploader=FakeUploader(fail_with="simulated upload failure"),
+        )
+        processed_job = worker.process_next_job()
+
+        self.assertIsNotNone(processed_job)
+        self.assertEqual(processed_job.status, "failed")
+        self.assertEqual(processed_job.error_message, "simulated upload failure")
 
 
 if __name__ == "__main__":
