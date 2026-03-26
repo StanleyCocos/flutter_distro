@@ -54,6 +54,11 @@ class BuildApiTest(unittest.TestCase):
             self.assertEqual(len(queue_response.json()), 1)
             self.assertEqual(queue_response.json()[0]["queue_position"], 1)
 
+            recent_response = client.get("/api/builds?limit=10")
+            self.assertEqual(recent_response.status_code, 200)
+            self.assertEqual(len(recent_response.json()), 1)
+            self.assertEqual(recent_response.json()[0]["id"], build_response.json()["id"])
+
             logs_response = client.get(
                 f"/api/builds/{build_response.json()['id']}/logs"
             )

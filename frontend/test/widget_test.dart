@@ -26,6 +26,25 @@ class FakeApiClient extends ApiClient {
   Future<BuildJob?> getCurrentBuild() async => null;
 
   @override
+  Future<BuildJob> getBuildJob(int jobId) async {
+    return BuildJob(
+      id: jobId,
+      projectId: 1,
+      branch: 'main',
+      platform: 'android',
+      status: 'success',
+      requestedAt: '2026-03-26T00:00:00Z',
+      startedAt: '2026-03-26T00:00:10Z',
+      finishedAt: '2026-03-26T00:01:00Z',
+      commitSha: 'abc1234',
+      artifactPath: '/tmp/app-release.apk',
+      pgyerUrl: 'https://www.pgyer.com/demo',
+      errorMessage: null,
+      queuePosition: null,
+    );
+  }
+
+  @override
   Future<BuildJob> createBuildJob({
     required int projectId,
     required String branch,
@@ -62,6 +81,47 @@ class FakeApiClient extends ApiClient {
         lastSyncAt: null,
         createdAt: '2026-03-26T00:00:00Z',
         updatedAt: '2026-03-26T00:00:00Z',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<BuildLogEntry>> listBuildLogs({
+    required int jobId,
+    int afterSeq = 0,
+  }) async {
+    if (afterSeq > 0) {
+      return const [];
+    }
+    return const [
+      BuildLogEntry(
+        id: 1,
+        jobId: 12,
+        seq: 1,
+        stream: 'system',
+        message: 'Build job queued.',
+        createdAt: '2026-03-26T00:00:00Z',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<BuildJob>> listRecentBuilds({int limit = 20}) async {
+    return const [
+      BuildJob(
+        id: 12,
+        projectId: 1,
+        branch: 'main',
+        platform: 'android',
+        status: 'success',
+        requestedAt: '2026-03-26T00:00:00Z',
+        startedAt: '2026-03-26T00:00:10Z',
+        finishedAt: '2026-03-26T00:01:00Z',
+        commitSha: 'abc1234',
+        artifactPath: '/tmp/app-release.apk',
+        pgyerUrl: 'https://www.pgyer.com/demo',
+        errorMessage: null,
+        queuePosition: null,
       ),
     ];
   }
@@ -111,5 +171,26 @@ void main() {
   testWidgets('app boots without debug banner', (tester) async {
     await tester.pumpWidget(FBuildApp(apiClient: FakeApiClient()));
     expect(find.byType(Banner), findsNothing);
+  });
+
+  testWidgets('opens recent build details and shows logs', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: DashboardPage(apiClient: FakeApiClient())),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Job #12 · Project #1'));
+    await tester.tap(find.text('Job #12 · Project #1'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('复制蒲公英链接'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText().contains('Build job queued.'),
+      ),
+      findsOneWidget,
+    );
   });
 }

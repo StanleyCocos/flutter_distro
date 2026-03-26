@@ -130,6 +130,22 @@ def list_queued_build_jobs() -> list[BuildJobRecord]:
     return [_to_record(row, queue_position=index) for index, row in enumerate(rows, start=1)]
 
 
+def list_recent_build_jobs(limit: int = 20) -> list[BuildJobRecord]:
+    with db_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, project_id, branch, platform, status, requested_at, started_at, finished_at,
+                   commit_sha, artifact_path, pgyer_url, error_message
+            FROM build_jobs
+            ORDER BY requested_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [_to_record(row) for row in rows]
+
+
 def claim_next_queued_build_job() -> BuildJobRecord | None:
     now = datetime.now(timezone.utc).isoformat()
 

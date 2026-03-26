@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fbuild_frontend/api_client.dart';
 import 'package:fbuild_frontend/models.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key, ApiClient? apiClient})
@@ -24,7 +25,12 @@ class _DashboardPageState extends State<DashboardPage> {
   String? _errorMessage;
   List<Project> _projects = const <Project>[];
   List<BuildJob> _queuedJobs = const <BuildJob>[];
+  List<BuildJob> _recentBuilds = const <BuildJob>[];
   BuildJob? _currentBuild;
+  int? _selectedBuildId;
+  BuildJob? _selectedBuild;
+  List<BuildLogEntry> _selectedBuildLogs = const <BuildLogEntry>[];
+  bool _selectedBuildLoading = false;
   DateTime? _lastUpdatedAt;
   final Map<int, List<ProjectBranch>> _projectBranches =
       <int, List<ProjectBranch>>{};
@@ -64,6 +70,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _apiClient.listProjects(),
         _apiClient.getCurrentBuild(),
         _apiClient.listQueuedBuilds(),
+        _apiClient.listRecentBuilds(),
       ]);
 
       if (!mounted) {
@@ -74,9 +81,15 @@ class _DashboardPageState extends State<DashboardPage> {
         _projects = results[0] as List<Project>;
         _currentBuild = results[1] as BuildJob?;
         _queuedJobs = results[2] as List<BuildJob>;
+        _recentBuilds = results[3] as List<BuildJob>;
         _lastUpdatedAt = DateTime.now();
         _errorMessage = null;
       });
+
+      final selectedBuildId = _selectedBuildId;
+      if (selectedBuildId != null) {
+        unawaited(_loadSelectedBuild(selectedBuildId));
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -222,6 +235,7 @@ class _DashboardPageState extends State<DashboardPage> {
         platform: platform,
       );
       await _loadDashboard(showLoading: false);
+      await _openBuildDetails(job.id);
 
       if (!mounted) {
         return;
@@ -248,6 +262,61 @@ class _DashboardPageState extends State<DashboardPage> {
           _submittingBuildKeys.remove(actionKey);
         });
       }
+    }
+  }
+
+  Future<void> _openBuildDetails(int jobId) async {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedBuildId = jobId;
+      _selectedBuild = null;
+      _selectedBuildLogs = const <BuildLogEntry>[];
+      _selectedBuildLoading = true;
+    });
+
+    await _loadSelectedBuild(jobId);
+  }
+
+  Future<void> _loadSelectedBuild(int jobId) async {
+    final lastSeq = _selectedBuildId == jobId && _selectedBuildLogs.isNotEmpty
+        ? _selectedBuildLogs.last.seq
+        : 0;
+
+    try {
+      final job = await _apiClient.getBuildJob(jobId);
+      final logs = await _apiClient.listBuildLogs(
+        jobId: jobId,
+        afterSeq: lastSeq,
+      );
+
+      if (!mounted || _selectedBuildId != jobId) {
+        return;
+      }
+
+      setState(() {
+        _selectedBuild = job;
+        _selectedBuildLogs = lastSeq == 0
+            ? logs
+            : <BuildLogEntry>[..._selectedBuildLogs, ...logs];
+        _selectedBuildLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || _selectedBuildId != jobId) {
+        return;
+      }
+
+      setState(() {
+        _selectedBuildLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF9F2A2A),
+          content: Text('读取任务详情失败：$error'),
+        ),
+      );
     }
   }
 
@@ -311,6 +380,12 @@ class _DashboardPageState extends State<DashboardPage> {
                                     onLoadBranches: _loadBranches,
                                     submittingBuildKeys: _submittingBuildKeys,
                                     onSubmitBuild: _submitBuild,
+                                    recentBuilds: _recentBuilds,
+                                    selectedBuildId: _selectedBuildId,
+                                    selectedBuild: _selectedBuild,
+                                    selectedBuildLogs: _selectedBuildLogs,
+                                    selectedBuildLoading: _selectedBuildLoading,
+                                    onSelectBuild: _openBuildDetails,
                                   ),
                                 ),
                               ],
@@ -340,6 +415,12 @@ class _DashboardPageState extends State<DashboardPage> {
                                 onLoadBranches: _loadBranches,
                                 submittingBuildKeys: _submittingBuildKeys,
                                 onSubmitBuild: _submitBuild,
+                                recentBuilds: _recentBuilds,
+                                selectedBuildId: _selectedBuildId,
+                                selectedBuild: _selectedBuild,
+                                selectedBuildLogs: _selectedBuildLogs,
+                                selectedBuildLoading: _selectedBuildLoading,
+                                onSelectBuild: _openBuildDetails,
                               ),
                             ],
                           );
@@ -609,6 +690,11 @@ class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
     required this.projects,
     required this.queuedJobs,
+    required this.recentBuilds,
+    required this.selectedBuildId,
+    required this.selectedBuild,
+    required this.selectedBuildLogs,
+    required this.selectedBuildLoading,
     required this.projectBranches,
     required this.syncingProjectIds,
     required this.loadingBranchProjectIds,
@@ -617,10 +703,16 @@ class _DashboardContent extends StatelessWidget {
     required this.onLoadBranches,
     required this.submittingBuildKeys,
     required this.onSubmitBuild,
+    required this.onSelectBuild,
   });
 
   final List<Project> projects;
   final List<BuildJob> queuedJobs;
+  final List<BuildJob> recentBuilds;
+  final int? selectedBuildId;
+  final BuildJob? selectedBuild;
+  final List<BuildLogEntry> selectedBuildLogs;
+  final bool selectedBuildLoading;
   final Map<int, List<ProjectBranch>> projectBranches;
   final Set<int> syncingProjectIds;
   final Set<int> loadingBranchProjectIds;
@@ -634,6 +726,7 @@ class _DashboardContent extends StatelessWidget {
     String platform,
   )
   onSubmitBuild;
+  final Future<void> Function(int jobId) onSelectBuild;
 
   @override
   Widget build(BuildContext context) {
@@ -676,6 +769,31 @@ class _DashboardContent extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         _PanelCard(
+          title: '最近构建',
+          subtitle: '这里会展示最近提交或执行过的任务，点击可查看日志与蒲公英链接。',
+          accentColor: const Color(0xFF457B9D),
+          child: recentBuilds.isEmpty
+              ? const _EmptyState(
+                  title: 'No Build Jobs Yet',
+                  subtitle: '从任意分支发起一次构建后，这里会开始出现任务记录。',
+                )
+              : Column(
+                  children: recentBuilds
+                      .map(
+                        (job) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _RecentBuildRow(
+                            job: job,
+                            selected: selectedBuildId == job.id,
+                            onTap: () => onSelectBuild(job.id),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+        ),
+        const SizedBox(height: 20),
+        _PanelCard(
           title: '即将到来的任务',
           subtitle: '现在已经能看到排队顺序，后续再接任务详情和日志页。',
           accentColor: const Color(0xFF8D6E63),
@@ -694,6 +812,17 @@ class _DashboardContent extends StatelessWidget {
                       )
                       .toList(growable: false),
                 ),
+        ),
+        const SizedBox(height: 20),
+        _PanelCard(
+          title: '任务详情',
+          subtitle: '轮询展示单个任务的状态、产物和增量日志。',
+          accentColor: const Color(0xFF2A9D8F),
+          child: _BuildDetailView(
+            selectedBuild: selectedBuild,
+            selectedBuildLogs: selectedBuildLogs,
+            loading: selectedBuildLoading,
+          ),
         ),
       ],
     );
@@ -1004,6 +1133,244 @@ class _BranchRow extends StatelessWidget {
   }
 }
 
+class _RecentBuildRow extends StatelessWidget {
+  const _RecentBuildRow({
+    required this.job,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final BuildJob job;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFE7F4F1) : const Color(0xFFF4ECE0),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? const Color(0xFF2A9D8F) : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _StatusPill(text: job.status, color: _statusColor(job.status)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${job.platform.toUpperCase()} · ${job.branch}',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Job #${job.id} · Project #${job.projectId}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF6B625B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BuildDetailView extends StatelessWidget {
+  const _BuildDetailView({
+    required this.selectedBuild,
+    required this.selectedBuildLogs,
+    required this.loading,
+  });
+
+  final BuildJob? selectedBuild;
+  final List<BuildLogEntry> selectedBuildLogs;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (selectedBuild == null) {
+      return const _EmptyState(
+        title: 'Select a Job',
+        subtitle: '点击最近构建中的任一任务，这里就会显示状态、日志和蒲公英链接。',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _MetaChip(
+              icon: Icons.confirmation_number_rounded,
+              label: 'Job #${selectedBuild!.id}',
+            ),
+            _MetaChip(
+              icon: Icons.android_rounded,
+              label: selectedBuild!.platform.toUpperCase(),
+            ),
+            _MetaChip(
+              icon: Icons.alt_route_rounded,
+              label: selectedBuild!.branch,
+            ),
+            _MetaChip(icon: Icons.sync_rounded, label: selectedBuild!.status),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (selectedBuild!.commitSha != null)
+          _DetailLine(label: 'Commit', value: selectedBuild!.commitSha!),
+        if (selectedBuild!.artifactPath != null)
+          _DetailLine(label: 'Artifact', value: selectedBuild!.artifactPath!),
+        if (selectedBuild!.pgyerUrl != null) ...[
+          _DetailLine(label: 'Pgyer', value: selectedBuild!.pgyerUrl!),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () => Clipboard.setData(
+              ClipboardData(text: selectedBuild!.pgyerUrl!),
+            ),
+            icon: const Icon(Icons.content_copy_rounded),
+            label: const Text('复制蒲公英链接'),
+          ),
+        ],
+        if (selectedBuild!.errorMessage != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              selectedBuild!.errorMessage!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF9F2A2A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        const SizedBox(height: 18),
+        Text(
+          '增量日志',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 180, maxHeight: 420),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF17212B),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: selectedBuildLogs.isEmpty
+              ? Text(
+                  '暂时还没有日志输出。',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFB9C7D6),
+                  ),
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: selectedBuildLogs
+                        .map(
+                          (log) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: RichText(
+                              text: TextSpan(
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: const Color(0xFFE8EEF5),
+                                  fontFamily: 'monospace',
+                                  height: 1.45,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text:
+                                        '[${log.seq.toString().padLeft(3, '0')}] ',
+                                    style: const TextStyle(
+                                      color: Color(0xFF8AB4F8),
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: '${log.stream.toUpperCase()} ',
+                                    style: TextStyle(
+                                      color: _logStreamColor(log.stream),
+                                    ),
+                                  ),
+                                  TextSpan(text: log.message),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailLine extends StatelessWidget {
+  const _DetailLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: RichText(
+        text: TextSpan(
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: const Color(0xFF231F20),
+            height: 1.45,
+          ),
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            TextSpan(text: value),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BuildJobSummary extends StatelessWidget {
   const _BuildJobSummary({required this.job, this.emphasizeStatus = false});
 
@@ -1024,12 +1391,7 @@ class _BuildJobSummary extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StatusPill(
-            text: job.status,
-            color: job.status == 'queued'
-                ? const Color(0xFF8D6E63)
-                : const Color(0xFF2A9D8F),
-          ),
+          _StatusPill(text: job.status, color: _statusColor(job.status)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1160,4 +1522,30 @@ String _formatTime(DateTime dateTime) {
   final minute = dateTime.minute.toString().padLeft(2, '0');
   final second = dateTime.second.toString().padLeft(2, '0');
   return '$hour:$minute:$second';
+}
+
+Color _statusColor(String status) {
+  switch (status) {
+    case 'success':
+      return const Color(0xFF2A9D8F);
+    case 'failed':
+      return const Color(0xFFD62828);
+    case 'running':
+    case 'preparing':
+    case 'uploading':
+      return const Color(0xFF457B9D);
+    default:
+      return const Color(0xFF8D6E63);
+  }
+}
+
+Color _logStreamColor(String stream) {
+  switch (stream) {
+    case 'stderr':
+      return const Color(0xFFFF8A80);
+    case 'stdout':
+      return const Color(0xFFA5D6A7);
+    default:
+      return const Color(0xFFFFF59D);
+  }
 }
