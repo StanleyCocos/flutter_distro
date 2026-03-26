@@ -15,6 +15,7 @@ class ProjectRecord:
     slug: str
     workspace_path: str
     is_active: bool
+    default_branch: str | None
     last_sync_at: str | None
     created_at: str
     updated_at: str
@@ -32,6 +33,7 @@ def _to_record(row: sqlite3.Row) -> ProjectRecord:
         slug=row["slug"],
         workspace_path=row["workspace_path"],
         is_active=bool(row["is_active"]),
+        default_branch=row["default_branch"],
         last_sync_at=row["last_sync_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -42,7 +44,8 @@ def list_projects() -> list[ProjectRecord]:
     with db_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, name, repo_url, slug, workspace_path, is_active, last_sync_at, created_at, updated_at
+            SELECT id, name, repo_url, slug, workspace_path, is_active, default_branch,
+                   last_sync_at, created_at, updated_at
             FROM projects
             ORDER BY created_at DESC, id DESC
             """
@@ -54,7 +57,8 @@ def get_project(project_id: int) -> ProjectRecord | None:
     with db_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, name, repo_url, slug, workspace_path, is_active, last_sync_at, created_at, updated_at
+            SELECT id, name, repo_url, slug, workspace_path, is_active, default_branch,
+                   last_sync_at, created_at, updated_at
             FROM projects
             WHERE id = ?
             """,
@@ -105,7 +109,8 @@ def create_project(repo_url: str) -> ProjectRecord:
             )
             row = connection.execute(
                 """
-                SELECT id, name, repo_url, slug, workspace_path, is_active, last_sync_at, created_at, updated_at
+                SELECT id, name, repo_url, slug, workspace_path, is_active, default_branch,
+                       last_sync_at, created_at, updated_at
                 FROM projects
                 WHERE id = ?
                 """,
@@ -116,5 +121,31 @@ def create_project(repo_url: str) -> ProjectRecord:
 
     if row is None:
         raise RuntimeError("Failed to load the created project record.")
+
+    return _to_record(row)
+
+
+def update_project_sync(project_id: int, default_branch: str | None, synced_at: str) -> ProjectRecord:
+    with db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE projects
+            SET default_branch = ?, last_sync_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (default_branch, synced_at, synced_at, project_id),
+        )
+        row = connection.execute(
+            """
+            SELECT id, name, repo_url, slug, workspace_path, is_active, default_branch,
+                   last_sync_at, created_at, updated_at
+            FROM projects
+            WHERE id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+    if row is None:
+        raise RuntimeError(f"Project {project_id} disappeared during sync update.")
 
     return _to_record(row)

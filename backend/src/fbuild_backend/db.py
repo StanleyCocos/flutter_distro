@@ -31,12 +31,15 @@ def init_db() -> None:
                 slug TEXT NOT NULL UNIQUE,
                 workspace_path TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
+                default_branch TEXT,
                 last_sync_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """
         )
+        _ensure_column(connection, "projects", "default_branch", "TEXT")
+        _ensure_column(connection, "projects", "last_sync_at", "TEXT")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS build_jobs (
@@ -63,6 +66,22 @@ def init_db() -> None:
             """
         )
         connection.commit()
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    columns = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    column_names = {column[1] for column in columns}
+    if column_name in column_names:
+        return
+
+    connection.execute(
+        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+    )
 
 
 @contextmanager
