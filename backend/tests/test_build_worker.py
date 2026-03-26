@@ -22,9 +22,12 @@ class FakeBuildExecutor:
             raise RuntimeError(self.fail_with)
 
         self.calls.append((job.id, project.id))
+        artifact_path = Path(project.workspace_path) / self.artifact_suffix
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text("artifact", encoding="utf-8")
         return BuildExecutionResult(
             commit_sha="abc123def456",
-            artifact_path=f"{project.workspace_path}/{self.artifact_suffix}",
+            artifact_path=str(artifact_path),
         )
 
 
@@ -44,6 +47,17 @@ class FakeUploader:
                 self.download_url = download_url
 
         return _Result(download_url=f"https://mock.pgyer.local/apps/{project.slug}/{job.id}")
+
+
+class FakeArtifactStore:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int, str | None]] = []
+
+    def archive(self, *, job, project, artifact_path):
+        self.calls.append((job.id, project.id, artifact_path))
+        if artifact_path is None:
+            return None
+        return f"{project.workspace_path}/archived/{Path(artifact_path).name}"
 
 
 class BuildWorkerTest(unittest.TestCase):
@@ -78,11 +92,13 @@ class BuildWorkerTest(unittest.TestCase):
 
         fake_executor = FakeBuildExecutor()
         fake_uploader = FakeUploader()
+        fake_artifact_store = FakeArtifactStore()
 
         worker = BuildWorker(
             build_executor=fake_executor,
             project_syncer=lambda input_project: input_project,
             uploader=fake_uploader,
+            artifact_store=fake_artifact_store,
         )
         processed_job = worker.process_next_job()
 
@@ -93,10 +109,15 @@ class BuildWorkerTest(unittest.TestCase):
         self.assertTrue(processed_job.artifact_path.endswith("app-release.apk"))
         self.assertEqual(fake_executor.calls, [(queued_job.id, project.id)])
         self.assertEqual(
+            fake_artifact_store.calls,
+            [(queued_job.id, project.id, f"{project.workspace_path}/app-release.apk")],
+        )
+        self.assertEqual(
             fake_uploader.calls,
             [(queued_job.id, project.id, processed_job.artifact_path)],
         )
         self.assertTrue(processed_job.pgyer_url.endswith(f"/{queued_job.id}"))
+        self.assertTrue(processed_job.artifact_path.endswith("/archived/app-release.apk"))
 
         stored_job = get_build_job(queued_job.id)
         self.assertIsNotNone(stored_job)
@@ -123,6 +144,7 @@ class BuildWorkerTest(unittest.TestCase):
             build_executor=FakeBuildExecutor(fail_with="simulated build failure"),
             project_syncer=lambda input_project: input_project,
             uploader=FakeUploader(),
+            artifact_store=FakeArtifactStore(),
         )
         processed_job = worker.process_next_job()
 
@@ -142,6 +164,7 @@ class BuildWorkerTest(unittest.TestCase):
             build_executor=FakeBuildExecutor(),
             project_syncer=lambda input_project: input_project,
             uploader=FakeUploader(fail_with="simulated upload failure"),
+            artifact_store=FakeArtifactStore(),
         )
         processed_job = worker.process_next_job()
 

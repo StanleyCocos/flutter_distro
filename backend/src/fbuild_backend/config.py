@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     pgyer_poll_attempts: int = Field(default=60, alias="PGYER_POLL_ATTEMPTS")
     pgyer_poll_seconds: float = Field(default=1.0, alias="PGYER_POLL_SECONDS")
     worker_poll_seconds: float = Field(default=2.0, alias="WORKER_POLL_SECONDS")
+    cleanup_poll_seconds: float = Field(default=3600.0, alias="CLEANUP_POLL_SECONDS")
+    artifact_retention_hours: int = Field(default=24, alias="ARTIFACT_RETENTION_HOURS")
+    workspace_build_retention_hours: int = Field(
+        default=168,
+        alias="WORKSPACE_BUILD_RETENTION_HOURS",
+    )
     data_dir: Path = Field(default=REPO_ROOT / "data", alias="DATA_DIR")
     logs_dir: Path = Field(default=REPO_ROOT / "logs", alias="LOGS_DIR")
     artifacts_dir: Path = Field(default=REPO_ROOT / "artifacts", alias="ARTIFACTS_DIR")
