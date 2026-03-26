@@ -24,6 +24,14 @@ class ProjectResponse(BaseModel):
     slug: str
     workspace_path: str
     is_active: bool
+    default_branch: str | None
     last_sync_at: str | None
     created_at: str
     updated_at: str
+
+
+class ProjectBranchResponse(BaseModel):
+    name: str
+    commit_sha: str
+    commit_date: str
+    commit_subject: str
