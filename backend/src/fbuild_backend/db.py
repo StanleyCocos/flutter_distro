@@ -37,6 +37,31 @@ def init_db() -> None:
             )
             """
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS build_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                branch TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                status TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                commit_sha TEXT,
+                artifact_path TEXT,
+                pgyer_url TEXT,
+                error_message TEXT,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_build_jobs_status_requested_at
+            ON build_jobs(status, requested_at, id)
+            """
+        )
         connection.commit()
 
 
@@ -50,4 +75,3 @@ def db_connection() -> Iterator[sqlite3.Connection]:
         connection.commit()
     finally:
         connection.close()
-
