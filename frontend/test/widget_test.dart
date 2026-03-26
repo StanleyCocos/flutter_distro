@@ -26,6 +26,29 @@ class FakeApiClient extends ApiClient {
   Future<BuildJob?> getCurrentBuild() async => null;
 
   @override
+  Future<BuildJob> createBuildJob({
+    required int projectId,
+    required String branch,
+    required String platform,
+  }) async {
+    return BuildJob(
+      id: 12,
+      projectId: projectId,
+      branch: branch,
+      platform: platform,
+      status: 'queued',
+      requestedAt: '2026-03-26T00:00:00Z',
+      startedAt: null,
+      finishedAt: null,
+      commitSha: null,
+      artifactPath: null,
+      pgyerUrl: null,
+      errorMessage: null,
+      queuePosition: 1,
+    );
+  }
+
+  @override
   Future<List<Project>> listProjects() async {
     return const [
       Project(
@@ -44,6 +67,18 @@ class FakeApiClient extends ApiClient {
   }
 
   @override
+  Future<List<ProjectBranch>> listProjectBranches(int projectId) async {
+    return const [
+      ProjectBranch(
+        name: 'main',
+        commitSha: 'abc1234',
+        commitDate: '2026-03-26T00:00:00Z',
+        commitSubject: 'bootstrap project',
+      ),
+    ];
+  }
+
+  @override
   Future<List<BuildJob>> listQueuedBuilds() async => const [];
 }
 
@@ -56,6 +91,21 @@ void main() {
 
     expect(find.text('F-Build'), findsOneWidget);
     expect(find.text('mobile-app'), findsWidgets);
+  });
+
+  testWidgets('loads branches and shows build actions', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: DashboardPage(apiClient: FakeApiClient())),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('查看分支'));
+    await tester.tap(find.text('查看分支'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('main'), findsOneWidget);
+    expect(find.text('发起 Android'), findsOneWidget);
+    expect(find.text('发起 iOS'), findsOneWidget);
   });
 
   testWidgets('app boots without debug banner', (tester) async {

@@ -65,6 +65,25 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<BuildJob> createBuildJob({
+    required int projectId,
+    required String branch,
+    required String platform,
+  }) async {
+    final response = await _httpClient.post(
+      _buildUri('/api/builds'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'project_id': projectId,
+        'branch': branch,
+        'platform': platform,
+      }),
+    );
+    _ensureSuccess(response);
+
+    return BuildJob.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
   Future<BuildJob?> getCurrentBuild() async {
     final response = await _httpClient.get(_buildUri('/api/builds/current'));
     _ensureSuccess(response);
