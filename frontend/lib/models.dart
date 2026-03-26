@@ -111,3 +111,32 @@ class ProjectBranch {
   final String commitDate;
   final String commitSubject;
 }
+
+class BuildLogEntry {
+  const BuildLogEntry({
+    required this.id,
+    required this.jobId,
+    required this.seq,
+    required this.stream,
+    required this.message,
+    required this.createdAt,
+  });
+
+  factory BuildLogEntry.fromJson(Map<String, dynamic> json) {
+    return BuildLogEntry(
+      id: json['id'] as int,
+      jobId: json['job_id'] as int,
+      seq: json['seq'] as int,
+      stream: json['stream'] as String,
+      message: json['message'] as String,
+      createdAt: json['created_at'] as String,
+    );
+  }
+
+  final int id;
+  final int jobId;
+  final int seq;
+  final String stream;
+  final String message;
+  final String createdAt;
+}

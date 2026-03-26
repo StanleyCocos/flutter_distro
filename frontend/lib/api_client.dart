@@ -84,6 +84,39 @@ class ApiClient {
     return BuildJob.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  Future<List<BuildJob>> listRecentBuilds({int limit = 20}) async {
+    final response = await _httpClient.get(
+      _buildUri('/api/builds?limit=$limit'),
+    );
+    _ensureSuccess(response);
+
+    final payload = jsonDecode(response.body) as List<dynamic>;
+    return payload
+        .map((item) => BuildJob.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Future<BuildJob> getBuildJob(int jobId) async {
+    final response = await _httpClient.get(_buildUri('/api/builds/$jobId'));
+    _ensureSuccess(response);
+    return BuildJob.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<List<BuildLogEntry>> listBuildLogs({
+    required int jobId,
+    int afterSeq = 0,
+  }) async {
+    final response = await _httpClient.get(
+      _buildUri('/api/builds/$jobId/logs?after_seq=$afterSeq'),
+    );
+    _ensureSuccess(response);
+
+    final payload = jsonDecode(response.body) as List<dynamic>;
+    return payload
+        .map((item) => BuildLogEntry.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
   Future<BuildJob?> getCurrentBuild() async {
     final response = await _httpClient.get(_buildUri('/api/builds/current'));
     _ensureSuccess(response);

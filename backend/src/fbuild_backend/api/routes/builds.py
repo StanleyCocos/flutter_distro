@@ -4,6 +4,7 @@ from fbuild_backend.repositories.build_jobs import (
     create_build_job,
     get_build_job,
     get_current_build_job,
+    list_recent_build_jobs,
     list_queued_build_jobs,
 )
 from fbuild_backend.repositories.build_logs import list_build_logs
@@ -42,6 +43,14 @@ def get_current_build() -> BuildJobResponse | None:
 @router.get("/queue", response_model=list[BuildJobResponse])
 def get_build_queue() -> list[BuildJobResponse]:
     return [BuildJobResponse.model_validate(job) for job in list_queued_build_jobs()]
+
+
+@router.get("", response_model=list[BuildJobResponse])
+def get_recent_builds(limit: int = 20) -> list[BuildJobResponse]:
+    return [
+        BuildJobResponse.model_validate(job)
+        for job in list_recent_build_jobs(limit=limit)
+    ]
 
 
 @router.get("/{job_id}", response_model=BuildJobResponse)
