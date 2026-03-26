@@ -44,6 +44,27 @@ class ApiClient {
     return Project.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  Future<Project> syncProject(int projectId) async {
+    final response = await _httpClient.post(
+      _buildUri('/api/projects/$projectId/sync'),
+    );
+    _ensureSuccess(response);
+
+    return Project.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<List<ProjectBranch>> listProjectBranches(int projectId) async {
+    final response = await _httpClient.get(
+      _buildUri('/api/projects/$projectId/branches'),
+    );
+    _ensureSuccess(response);
+
+    final payload = jsonDecode(response.body) as List<dynamic>;
+    return payload
+        .map((item) => ProjectBranch.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
   Future<BuildJob?> getCurrentBuild() async {
     final response = await _httpClient.get(_buildUri('/api/builds/current'));
     _ensureSuccess(response);

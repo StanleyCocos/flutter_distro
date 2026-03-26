@@ -6,6 +6,7 @@ class Project {
     required this.slug,
     required this.workspacePath,
     required this.isActive,
+    required this.defaultBranch,
     required this.lastSyncAt,
     required this.createdAt,
     required this.updatedAt,
@@ -19,6 +20,7 @@ class Project {
       slug: json['slug'] as String,
       workspacePath: json['workspace_path'] as String,
       isActive: json['is_active'] as bool,
+      defaultBranch: json['default_branch'] as String?,
       lastSyncAt: json['last_sync_at'] as String?,
       createdAt: json['created_at'] as String,
       updatedAt: json['updated_at'] as String,
@@ -31,6 +33,7 @@ class Project {
   final String slug;
   final String workspacePath;
   final bool isActive;
+  final String? defaultBranch;
   final String? lastSyncAt;
   final String createdAt;
   final String updatedAt;
@@ -84,4 +87,27 @@ class BuildJob {
   final String? pgyerUrl;
   final String? errorMessage;
   final int? queuePosition;
+}
+
+class ProjectBranch {
+  const ProjectBranch({
+    required this.name,
+    required this.commitSha,
+    required this.commitDate,
+    required this.commitSubject,
+  });
+
+  factory ProjectBranch.fromJson(Map<String, dynamic> json) {
+    return ProjectBranch(
+      name: json['name'] as String,
+      commitSha: json['commit_sha'] as String,
+      commitDate: json['commit_date'] as String,
+      commitSubject: json['commit_subject'] as String,
+    );
+  }
+
+  final String name;
+  final String commitSha;
+  final String commitDate;
+  final String commitSubject;
 }
