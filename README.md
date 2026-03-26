@@ -24,3 +24,7 @@ Current deployment direction:
 
 - Local development: `uv` for the backend, Flutter tooling for the web app
 - Runtime deployment: Docker containers
+
+Deployment documentation:
+
+- `docs/DEPLOYMENT.md`
