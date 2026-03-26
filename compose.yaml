@@ -1,0 +1,11 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/runtime/data
+      - ./logs:/runtime/logs
+      - ./artifacts:/runtime/artifacts
+      - ./workspaces:/runtime/workspaces

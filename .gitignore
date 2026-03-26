@@ -1,0 +1,25 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Python / uv
+__pycache__/
+.pycache/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+
+# Runtime data
+data/*.db
+data/*.sqlite3
+logs/**/*.log
+artifacts/**
+!artifacts/.gitkeep
+workspaces/**
+!workspaces/.gitkeep
